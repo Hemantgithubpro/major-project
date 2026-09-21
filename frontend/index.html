@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>MVP Reliability</title>
+<style>body{font-family:system-ui;max-width:900px;margin:20px auto;padding:0 16px}button{padding:8px 14px;margin:4px}pre{background:#f4f4f4;padding:12px;white-space:pre-wrap}.card{border:1px solid #ddd;padding:12px;margin:12px 0}</style>
+</head>
+<body>
+<h1>MVP Reliability — 30% slice</h1>
+<div class="card">
+<h3>1. Place order</h3>
+<button onclick="placeOrder(false)">Place order (happy)</button>
+<button onclick="placeOrder(true)">Place order (risk fails)</button>
+<pre id="order"></pre>
+</div>
+<div class="card">
+<h3>2. Chaos</h3>
+<button onclick="chaos(true)">Enable risk outage</button>
+<button onclick="chaos(false)">Disable risk outage</button>
+<pre id="chaos"></pre>
+</div>
+<div class="card">
+<h3>3. Report</h3>
+<input id="iid" placeholder="incident_id" size="40">
+<button onclick="report()">Generate postmortem (OpenRouter)</button>
+<pre id="report"></pre>
+</div>
+<script>
+const G = "http://localhost:8080", AI = "http://localhost:9001";
+async function placeOrder(fail) {
+  if (fail) await fetch(G+"/api/chaos/risk-outage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:true})});
+  const r = await fetch(G+"/api/orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({customer_ref:"demo",amount:99.5})});
+  const j = await r.json();
+  document.getElementById("order").textContent = JSON.stringify(j,null,2);
+  if (j.incident_id) document.getElementById("iid").value = j.incident_id;
+  if (fail) await fetch(G+"/api/chaos/risk-outage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:false})});
+}
+async function chaos(on) {
+  const r = await fetch(G+"/api/chaos/risk-outage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:on})});
+  document.getElementById("chaos").textContent = await r.text();
+}
+async function report() {
+  const iid = document.getElementById("iid").value;
+  const r = await fetch(AI+"/generate-postmortem",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({incident_id:iid})});
+  const j = await r.json();
+  document.getElementById("report").textContent = (j.model ? "["+j.model+(j.cached?" cached":"")+"]\n\n" : "") + (j.markdown || JSON.stringify(j));
+}
+</script>
+</body>
+</html>

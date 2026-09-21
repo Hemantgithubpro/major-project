@@ -1,0 +1,11 @@
+.env
+*.log
+*.out
+*.exe
+/bin/
+/tmp/
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+.commandcode/
