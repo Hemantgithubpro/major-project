@@ -2,6 +2,8 @@
 set -e
 G=${GATEWAY:-http://localhost:8080}
 AI=${GENAI:-http://localhost:9001}
+echo "== reset chaos flags =="
+curl -sf -X POST $G/api/chaos/risk-outage -H 'Content-Type: application/json' -d '{"enabled":false}' > /dev/null || true
 echo "== happy path =="
 HAPPY=$(curl -sf -X POST $G/api/orders -H 'Content-Type: application/json' -d '{"customer_ref":"smoke","amount":10}')
 echo "$HAPPY"
