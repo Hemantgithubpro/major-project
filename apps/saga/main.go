@@ -122,6 +122,19 @@ func main() {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		runSaga(w, r, body.OrderID, body.Amount)
 	})
+	mux.HandleFunc("GET /sagas/recent", func(w http.ResponseWriter, r *http.Request) {
+		rows, _ := p.Query(ctx, `SELECT transaction_id::text, order_id::text, status, current_step, created_at::text FROM saga_svc.sagas ORDER BY created_at DESC LIMIT 20`)
+		out := []map[string]any{}
+		if rows != nil {
+			defer rows.Close()
+			for rows.Next() {
+				var tx, oid, st, step, at string
+				_ = rows.Scan(&tx, &oid, &st, &step, &at)
+				out = append(out, map[string]any{"transaction_id": tx, "order_id": oid, "status": st, "current_step": step, "created_at": at})
+			}
+		}
+		httpx.WriteJSON(w, 200, out)
+	})
 	mux.HandleFunc("GET /saga/", func(w http.ResponseWriter, r *http.Request) {
 		tx := r.URL.Path[len("/saga/"):]
 		var status, orderID string
@@ -140,6 +153,6 @@ func main() {
 		httpx.WriteJSON(w, 200, map[string]any{"transaction_id": tx, "status": status, "order_id": orderID, "steps": steps})
 	})
 	port := httpx.Env("PORT", "8085")
-	s := &http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	s := &http.Server{Addr: ":" + port, Handler: httpx.CORS(mux), ReadHeaderTimeout: 5 * time.Second}
 	_ = s.ListenAndServe()
 }

@@ -38,6 +38,6 @@ func main() {
 		httpx.WriteJSON(w, 200, map[string]any{"order_id": id, "status": st, "customer_ref": ref, "amount": amt})
 	})
 	port := httpx.Env("PORT", "8081")
-	s := &http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	s := &http.Server{Addr: ":" + port, Handler: httpx.CORS(mux), ReadHeaderTimeout: 5 * time.Second}
 	_ = s.ListenAndServe()
 }

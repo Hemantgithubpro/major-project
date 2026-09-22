@@ -48,6 +48,6 @@ func main() {
 		httpx.WriteJSON(w, 200, map[string]bool{"failing": body.Enabled})
 	})
 	port := httpx.Env("PORT", "8084")
-	s := &http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	s := &http.Server{Addr: ":" + port, Handler: httpx.CORS(mux), ReadHeaderTimeout: 5 * time.Second}
 	_ = s.ListenAndServe()
 }

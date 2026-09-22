@@ -49,6 +49,6 @@ func main() {
 		httpx.WriteJSON(w, 200, map[string]string{"status": "released"})
 	})
 	port := httpx.Env("PORT", "8082")
-	s := &http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	s := &http.Server{Addr: ":" + port, Handler: httpx.CORS(mux), ReadHeaderTimeout: 5 * time.Second}
 	_ = s.ListenAndServe()
 }

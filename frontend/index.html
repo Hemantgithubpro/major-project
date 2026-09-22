@@ -1,30 +1,49 @@
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><title>MVP Reliability</title>
-<style>body{font-family:system-ui;max-width:900px;margin:20px auto;padding:0 16px}button{padding:8px 14px;margin:4px}pre{background:#f4f4f4;padding:12px;white-space:pre-wrap}.card{border:1px solid #ddd;padding:12px;margin:12px 0}</style>
+<style>body{font-family:system-ui;max-width:900px;margin:20px auto;padding:0 16px}button{padding:8px 14px;margin:4px}pre{background:#f4f4f4;padding:12px;white-space:pre-wrap}.card{border:1px solid #ddd;padding:12px;margin:12px 0}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px 8px;text-align:left;font-size:13px}.ok{color:#0a7d2c;font-weight:bold}.bad{color:#b00020;font-weight:bold}tr{cursor:pointer}tr:hover{background:#f9f9f9}</style>
 </head>
 <body>
 <h1>MVP Reliability — 30% slice</h1>
 <div class="card">
-<h3>1. Place order</h3>
+<h3>Live transactions <small>(auto-refresh 3s)</small></h3>
+<table><thead><tr><th>Time</th><th>Order</th><th>Tx</th><th>Status</th></tr></thead><tbody id="feed"></tbody></table>
+<pre id="detail">click a row for saga timeline…</pre>
+</div>
+<div class="card">
+<h3>Place order</h3>
 <button onclick="placeOrder(false)">Place order (happy)</button>
 <button onclick="placeOrder(true)">Place order (risk fails)</button>
 <pre id="order"></pre>
 </div>
 <div class="card">
-<h3>2. Chaos</h3>
+<h3>Chaos</h3>
 <button onclick="chaos(true)">Enable risk outage</button>
 <button onclick="chaos(false)">Disable risk outage</button>
 <pre id="chaos"></pre>
 </div>
 <div class="card">
-<h3>3. Report</h3>
+<h3>Report</h3>
 <input id="iid" placeholder="incident_id" size="40">
 <button onclick="report()">Generate postmortem (OpenRouter)</button>
 <pre id="report"></pre>
 </div>
 <script>
 const G = "http://localhost:8080", AI = "http://localhost:9001";
+async function refresh() {
+  try {
+    const r = await fetch(G+"/api/transactions/recent");
+    const rows = await r.json();
+    document.getElementById("feed").innerHTML = rows.map(t =>
+      `<tr onclick="detail('${t.transaction_id}')"><td>${(t.created_at||"").slice(11,19)}</td><td>${(t.order_id||"").slice(0,8)}</td><td>${(t.transaction_id||"").slice(0,8)}</td><td class="${t.status==="COMPLETED"?"ok":"bad"}">${t.status}</td></tr>`
+    ).join("") || "<tr><td colspan=4>no transactions yet — run demo.sh or place an order</td></tr>";
+  } catch(e) { /* backend waking up */ }
+}
+async function detail(tx) {
+  const r = await fetch(G+"/api/transactions/"+tx);
+  const j = await r.json();
+  document.getElementById("detail").textContent = JSON.stringify(j,null,2);
+}
 async function placeOrder(fail) {
   if (fail) await fetch(G+"/api/chaos/risk-outage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:true})});
   const r = await fetch(G+"/api/orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({customer_ref:"demo",amount:99.5})});
@@ -32,17 +51,20 @@ async function placeOrder(fail) {
   document.getElementById("order").textContent = JSON.stringify(j,null,2);
   if (j.incident_id) document.getElementById("iid").value = j.incident_id;
   if (fail) await fetch(G+"/api/chaos/risk-outage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:false})});
+  refresh();
 }
 async function chaos(on) {
   const r = await fetch(G+"/api/chaos/risk-outage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:on})});
   document.getElementById("chaos").textContent = await r.text();
 }
 async function report() {
+  document.getElementById("report").textContent = "generating…";
   const iid = document.getElementById("iid").value;
   const r = await fetch(AI+"/generate-postmortem",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({incident_id:iid})});
   const j = await r.json();
   document.getElementById("report").textContent = (j.model ? "["+j.model+(j.cached?" cached":"")+"]\n\n" : "") + (j.markdown || JSON.stringify(j));
 }
+refresh(); setInterval(refresh, 3000);
 </script>
 </body>
 </html>
