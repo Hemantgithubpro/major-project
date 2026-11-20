@@ -378,8 +378,10 @@ waits out any cooldown from a previous run — no manual DB edits — then drive
 |-----|----------|--------------|-----------|------------|
 | A | 115 s | `11:34:39 SCALE_UP → BLOCKED/INV-O2 → SHED_LOAD`, verified `improved=true` | 1303 / 1600 | live, `cached=false` |
 | B | 105 s | `11:36:39 SCALE_UP → BLOCKED/INV-O2 → SHED_LOAD`, verified `improved=true` | 1125 / 1600 | live, `cached=false` |
+| Final (after clean `make up`) | 105 s | `11:46:39 SCALE_UP → BLOCKED/INV-O2 → SHED_LOAD`, verified `improved=true` | 1151 / 1600 | live, `cached=false` |
 
-Both runs under 6 minutes. Fallback captures: `docs/screenshots/ledger.png`,
+All runs under 6 minutes. Final resource check: 13/13 containers up, 10 CPUs, 53% RAM free.
+Viva answers: `docs/VIVA_QBANK.md`. Fallback captures: `docs/screenshots/ledger.png`,
 `docs/screenshots/postmortem.png` (real headless-Chrome captures of the live UI/report).
 
 Integration bugs found and fixed during rehearsal:
