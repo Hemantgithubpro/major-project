@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Demo Store — safety-constrained reliability</title>
+<style>
+:root{--ink:#1d2433;--muted:#667085;--line:#e4e7ec;--brand:#2f5bea;--bg:#f7f8fb}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);margin:0;background:var(--bg)}
+header{background:#fff;border-bottom:1px solid var(--line);padding:18px 28px;display:flex;justify-content:space-between;align-items:center}
+header h1{margin:0;font-size:20px}
+.badge{background:#eef2ff;color:#3538cd;padding:4px 9px;border-radius:20px;font-size:12px;font-weight:600}
+main{max-width:1200px;margin:24px auto;padding:0 20px;display:grid;grid-template-columns:1fr 330px;gap:20px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:18px}
+.card h2{margin:0 0 14px;font-size:16px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.product{border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center}
+.product .emoji{font-size:34px}
+.product .name{font-weight:600;margin:6px 0;font-size:14px}
+.product .price{color:var(--muted);font-size:13px;margin-bottom:10px}
+button{cursor:pointer;border:0;border-radius:8px;padding:9px 14px;background:var(--brand);color:#fff;font-weight:600;font-size:13px}
+button.secondary{background:#eef2ff;color:#3538cd}
+button:disabled{opacity:.55;cursor:wait}
+.cart-row{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid var(--line)}
+.total{display:flex;justify-content:space-between;font-weight:700;margin:12px 0}
+.wide{grid-column:1/-1}
+pre{background:#0f172a;color:#d7e1f5;padding:14px;border-radius:9px;white-space:pre-wrap;font-size:12px;max-height:460px;overflow:auto}
+table{border-collapse:collapse;width:100%;font-size:12px}
+td,th{border:1px solid var(--line);padding:6px 8px;text-align:left}
+.note{color:var(--muted);font-size:12px;line-height:1.5}
+.stat{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}
+.stat b{font-variant-numeric:tabular-nums}
+select{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;margin-bottom:10px;background:#fff}
+.bad{color:#b42318}.good{color:#067647}
+@media(max-width:900px){main{grid-template-columns:1fr}.grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Demo Store <span class="muted">— operator testbed</span></h1>
+  <span class="badge">static catalogue · real orders</span>
+</header>
+<main>
+  <div>
+    <div class="card">
+      <h2>Products</h2>
+      <div class="grid" id="products"></div>
+    </div>
+
+    <div class="card wide">
+      <h2>Reliability simulation</h2>
+      <p class="note">Each case drives the real testbed: real metrics, real XGBoost risk, real
+      safety shield, real ledger, and a live OpenRouter explanation. Nothing is mocked.</p>
+      <select id="scenario">
+        <option value="happy">Happy checkout — normal traffic</option>
+        <option value="risk_outage">Risk outage — saga compensation + postmortem</option>
+        <option value="db_bottleneck">DB bottleneck — SCALE_UP vetoed, SHED_LOAD executed</option>
+        <option value="traffic_spike">Traffic spike — high load without a fault</option>
+      </select>
+      <button id="runBtn" onclick="runSimulation()">Run simulation</button>
+      <span id="simStatus" class="note"></span>
+      <div id="results" style="margin-top:16px"></div>
+    </div>
+  </div>
+
+  <aside>
+    <div class="card">
+      <h2>Your cart</h2>
+      <div id="cart"></div>
+      <div class="total"><span>Total</span><span id="total">$0.00</span></div>
+      <button id="checkoutBtn" style="width:100%" onclick="checkout()">Checkout</button>
+      <pre id="orderResult" style="margin-top:12px;max-height:160px">Order response appears here.</pre>
+    </div>
+    <div class="card">
+      <h2>What this is</h2>
+      <p class="note">A storefront-style interface over the safety-constrained autonomy testbed.
+      The catalogue is static demo data; checkout creates a real order through the gateway.
+      The simulation button is the research demo, not an e-commerce feature.</p>
+    </div>
+  </aside>
+</main>
+
+<script>
+const G = "http://localhost:8080", SIM = "http://localhost:8088";
+const PRODUCTS = [
+  {id:"p1", name:"Mechanical Keyboard", price:89.0, emoji:"⌨️"},
+  {id:"p2", name:"USB-C Hub", price:49.5, emoji:"🔌"},
+  {id:"p3", name:"Desk Lamp", price:34.0, emoji:"💡"},
+  {id:"p4", name:"Notebook Set", price:12.5, emoji:"📓"},
+  {id:"p5", name:"Webcam 1080p", price:69.0, emoji:"📷"},
+  {id:"p6", name:"Noise-cancel Headphones", price:149.0, emoji:"🎧"},
+];
+const cart = new Map();
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function money(n){return "$"+Number(n).toFixed(2);}
+
+function renderProducts(){
+  document.getElementById("products").innerHTML = PRODUCTS.map(p =>
+    `<div class="product"><div class="emoji">${p.emoji}</div><div class="name">${esc(p.name)}</div>
+     <div class="price">${money(p.price)}</div>
+     <button class="secondary" onclick="add('${p.id}')">Add to cart</button></div>`).join("");
+}
+function add(id){
+  cart.set(id,(cart.get(id)||0)+1); renderCart();
+}
+function renderCart(){
+  let total=0, rows=[];
+  for(const [id,qty] of cart){
+    const p=PRODUCTS.find(x=>x.id===id); const sub=p.price*qty; total+=sub;
+    rows.push(`<div class="cart-row"><span>${esc(p.name)} × ${qty}</span><span>${money(sub)}</span></div>`);
+  }
+  document.getElementById("cart").innerHTML = rows.join("") || '<p class="note">Cart is empty.</p>';
+  document.getElementById("total").textContent = money(total);
+  document.getElementById("checkoutBtn").disabled = cart.size===0;
+}
+async function checkout(){
+  let total=0, items=0;
+  for(const [id,qty] of cart){total+=PRODUCTS.find(x=>x.id===id).price*qty;items+=qty;}
+  const r = await fetch(G+"/api/orders",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({customer_ref:"storefront:"+items+"-items",amount:total})});
+  document.getElementById("orderResult").textContent = r.status + " " + JSON.stringify(await r.json(),null,2);
+}
+
+const LABELS = {
+  scenario:"Scenario", duration_s:"Duration (s)", orders_placed:"Orders placed", orders_ok:"Orders OK",
+  orders_failed:"Orders failed", shedded_503:"Load-shed 503s", p95_before_ms:"p95 before (ms)",
+  p95_after_ms:"p95 after (ms)", db_conn_pct_before:"DB connections before", db_conn_pct_after:"DB connections after",
+  db_pool_waiting:"DB pool waiting", db_latency_injected_ms:"Injected DB latency (ms)", risk_score:"ML risk score",
+  risk_level:"Risk level", predicted_cause:"Predicted cause", new_decisions:"New ledger decisions",
+  veto_invariant:"Shield veto", shield_action:"Final action", verification_improved:"Verification improved"
+};
+function renderStats(s){
+  const rows=Object.keys(LABELS).filter(k=>k in s).map(k=>{
+    let v=s[k];
+    if(k.includes("_ms")) v=Number(v).toFixed(0);
+    if(k.includes("_pct")) v=Number(v).toFixed(2);
+    if(k==="duration_s"||k==="risk_score") v=Number(v).toFixed(3);
+    if(typeof v==="boolean") v=v?"yes":"no";
+    return `<div class="stat"><span>${LABELS[k]}</span><b>${esc(v)}</b></div>`;
+  }).join("");
+  let decisions="";
+  if(s.new_decisions>0){
+    const ds=(window._decisions||[]).slice(0,5);
+    decisions=`<h3 style="font-size:14px;margin-top:18px">Ledger decisions</h3><table>
+      <thead><tr><th>Time</th><th>Proposed</th><th>Verdict</th><th>Blocked by</th><th>Action</th></tr></thead><tbody>`+
+      ds.map(d=>`<tr><td>${esc((d.created_at||"").slice(11,19))}</td><td>${esc(d.policy_action)}</td>
+        <td class="${d.verdict==="BLOCKED"?"bad":"good"}">${esc(d.verdict)}</td>
+        <td>${esc(d.blocked_by||"—")}</td><td>${esc(d.shield_action)}</td></tr>`).join("")+`</tbody></table>`;
+  }
+  return rows+decisions;
+}
+async function runSimulation(){
+  const btn=document.getElementById("runBtn"), status=document.getElementById("simStatus");
+  const scenario=document.getElementById("scenario").value;
+  btn.disabled=true; status.textContent="Running "+scenario+"… (this drives the live stack)";
+  document.getElementById("results").innerHTML="";
+  try{
+    const r=await fetch(SIM+"/run",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({scenario})});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error||("HTTP "+r.status));
+    window._decisions=j.decisions||[];
+    const ai=j.ai||{};
+    const pm=j.postmortem;
+    document.getElementById("results").innerHTML=`
+      <h3 style="font-size:14px">Real stats</h3>${renderStats(j.stats)}
+      <h3 style="font-size:14px;margin-top:18px">AI explanation ${ai.model?`<span class="badge">${esc(ai.model)}</span>`:""}</h3>
+      <pre>${esc(ai.explanation||ai.error||"no explanation")}</pre>
+      ${pm?`<h3 style="font-size:14px;margin-top:18px">Live postmortem ${pm.model?`<span class="badge">${esc(pm.model)}${pm.cached?" cached":""}</span>`:""}</h3>
+      <pre>${esc(pm.markdown||pm.error||"no report")}</pre>`:""}`;
+    status.textContent="Done — "+scenario;
+  }catch(e){status.textContent="Failed: "+e.message;}
+  btn.disabled=false;
+}
+renderProducts(); renderCart();
+</script>
+</body>
+</html>

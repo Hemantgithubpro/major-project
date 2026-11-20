@@ -1,4 +1,4 @@
-.PHONY: up down demo demo-final logs ps smoke
+.PHONY: up down demo demo-final logs ps smoke storefront
 
 up:
 	docker compose up -d --build
@@ -21,3 +21,7 @@ demo:
 
 demo-final:
 	@./scripts/demo-final.sh
+
+storefront:
+	docker compose up -d --build genai simulation storefront
+	@echo "storefront: http://localhost:5174  simulation API: http://localhost:8088"

@@ -187,6 +187,31 @@ services:
       gateway:
         condition: service_started
 
+  simulation:
+    build:
+      context: .
+      dockerfile: ./apps/simulation/Dockerfile
+    ports:
+      - "8088:8088"
+    environment:
+      PORT: 8088
+      GATEWAY_URL: http://gateway:8080
+      PAYMENT_URL: http://payment:8083
+      CONTROLLER_URL: http://reliability-controller:8086
+      GENAI_URL: http://genai:9001
+    depends_on:
+      - gateway
+      - reliability-controller
+      - genai
+
+  storefront:
+    build: ./ecommerce
+    ports:
+      - "5174:80"
+    depends_on:
+      - gateway
+      - simulation
+
   genai:
     build: ./ai/service
     ports:

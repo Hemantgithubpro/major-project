@@ -137,6 +137,12 @@ class QueryReq(BaseModel):
     incident_id: str | None = None
 
 
+class SimReq(BaseModel):
+    scenario: str
+    stats: dict
+    decisions: list[dict] = []
+
+
 @app.get("/healthz")
 def healthz():
     return {"status": "ok"}
@@ -181,6 +187,40 @@ def query(req: QueryReq):
         return {"answer": text, "model": model, "evidence": chunks, "cached": False}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=503)
+
+
+@app.post("/explain-simulation")
+def explain_simulation(req: SimReq):
+    """Advisory explanation of a real simulation run. Never executes anything."""
+    if OFFLINE_MOCK or not API_KEY:
+        return JSONResponse(
+            {"error": "LLM unavailable (offline mock / no API key); no explanation served"},
+            status_code=503,
+        )
+    payload = {
+        "scenario": req.scenario,
+        "stats": req.stats,
+        "recent_decisions": req.decisions[:5],
+    }
+    user = (
+        f"<simulation>{json.dumps(payload)}</simulation>\n"
+        "Write a short SRE explanation with sections: Summary, What the metrics show, "
+        "Controller decision, Recommendation. Use ONLY the supplied numbers and decisions. "
+        "Label every claim FACT, INFERENCE, or RECOMMENDATION. If no remediation was needed, "
+        "say so explicitly. Do not invent metrics."
+    )
+    try:
+        text, model, pt, ct = chat([{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user}])
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+    return {
+        "explanation": text,
+        "model": model,
+        "cached": False,
+        "prompt_tokens": pt,
+        "completion_tokens": ct,
+        "prompt_version": PROMPT_VERSION,
+    }
 
 
 @app.get("/incidents/{iid}/report")
