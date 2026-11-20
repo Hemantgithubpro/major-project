@@ -83,13 +83,18 @@ POST /evaluate
     "prediction_ts": "2026-11-20T18:00:00Z", "now": "2026-11-20T18:00:05Z",
     "prediction_max_age_s": 60,
     "last_action_at": "2026-11-20T17:58:00Z", "cooldown_s": 60,
-    "actions_in_window": 0, "action_budget_per_window": 3
+    "actions_in_window": 0, "action_budget_per_window": 3,
+    "budget_remaining_usd": 8.5, "transaction_state_ok": true
   }
 }
 → { "allow": false, "invariant_id": "INV-O2",
-    "reason": "db_conn_pct 0.85 >= threshold 0.70; scale-up adds DB connections",
+    "reason": "db_conn_pct 0.85 >= threshold 0.70; scale-up would add DB connections",
     "invariant_version": 1 }
 ```
+
+Invariant ids: `INV-O0` (unknown action), `INV-O5` (freshness), `INV-O3` (decision id present;
+uniqueness is enforced by the controller ledger), `INV-O1` (replica bounds), `INV-O2`
+(DB ceiling), `INV-O4` (cooldown/budget), `INV-O6` (USD budget), `INV-O7` (transaction state).
 
 ### 1.4 Action names (exact strings)
 

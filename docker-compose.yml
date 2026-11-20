@@ -136,6 +136,15 @@ services:
       kafka:
         condition: service_started
 
+  safety-shield:
+    build:
+      context: .
+      dockerfile: ./apps/safety-shield/Dockerfile
+    ports:
+      - "8087:8087"
+    environment:
+      PORT: 8087
+
   genai:
     build: ./ai/service
     ports:
