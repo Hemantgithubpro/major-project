@@ -5,11 +5,27 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"mvp/shared/httpx"
 	"mvp/shared/metrics"
 )
+
+var shedding atomic.Bool
+
+// Chaos and admin endpoints are local-only by design. They must not be exposed
+// in a deployed environment.
+func localOnly(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !strings.EqualFold(httpx.Env("ENV", "local"), "local") {
+			httpx.WriteJSON(w, 403, map[string]string{"error": "admin endpoints disabled"})
+			return
+		}
+		next(w, r)
+	}
+}
 
 func proxy(target string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -39,9 +55,15 @@ func proxy(target string) http.HandlerFunc {
 func main() {
 	sagaURL := httpx.Env("SAGA_URL", "http://saga:8085")
 	riskURL := httpx.Env("RISK_URL", "http://risk:8084")
+	paymentURL := httpx.Env("PAYMENT_URL", "http://payment:8083")
+	controllerURL := httpx.Env("CONTROLLER_URL", "http://reliability-controller:8086")
 	mux := http.NewServeMux()
 	httpx.Healthz(mux)
 	mux.HandleFunc("POST /api/orders", func(w http.ResponseWriter, r *http.Request) {
+		if shedding.Load() {
+			httpx.WriteJSON(w, 503, map[string]string{"error": "load shed"})
+			return
+		}
 		var body struct {
 			CustomerRef string  `json:"customer_ref"`
 			Amount      float64 `json:"amount"`
@@ -86,7 +108,7 @@ func main() {
 		tx := r.URL.Path[len("/api/transactions/"):]
 		proxy(sagaURL+"/saga/"+tx)(w, r)
 	})
-	mux.HandleFunc("POST /api/chaos/risk-outage", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/chaos/risk-outage", localOnly(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		req, _ := http.NewRequest("POST", riskURL+"/chaos/fail", bytes.NewReader(b))
 		req.Header.Set("Content-Type", "application/json")
@@ -100,7 +122,19 @@ func main() {
 		defer resp.Body.Close()
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, resp.Body)
-	})
+	}))
+	mux.Handle("POST /api/chaos/db-latency", localOnly(proxy(paymentURL+"/chaos/db-latency")))
+	mux.HandleFunc("POST /admin/shed", localOnly(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Enabled bool `json:"enabled"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		shedding.Store(body.Enabled)
+		httpx.WriteJSON(w, 200, map[string]any{"shedding": shedding.Load()})
+	}))
+	mux.Handle("GET /api/decisions", proxy(controllerURL+"/decisions"))
+	mux.Handle("GET /api/predictions", proxy(controllerURL+"/predictions"))
+	mux.Handle("GET /api/audit", proxy(controllerURL+"/audit"))
 	mux.HandleFunc("GET /api/system/health", func(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteJSON(w, 200, map[string]string{"status": "ok"})
 	})

@@ -45,6 +45,9 @@ services:
       PORT: 8080
       SAGA_URL: http://saga:8085
       RISK_URL: http://risk:8084
+      PAYMENT_URL: http://payment:8083
+      CONTROLLER_URL: http://reliability-controller:8086
+      ENV: local
     depends_on:
       - saga
       - risk
@@ -153,6 +156,36 @@ services:
       - "9000:9000"
     environment:
       MODEL_DIR: /app/models
+
+  reliability-controller:
+    build:
+      context: .
+      dockerfile: ./apps/reliability-controller/Dockerfile
+    ports:
+      - "8086:8086"
+    environment:
+      PORT: 8086
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/mvp?sslmode=disable
+      GATEWAY_URL: http://gateway:8080
+      RISK_URL: http://risk:8084
+      SHIELD_URL: http://safety-shield:8087
+      ML_URL: http://ml-service:9000
+      CONTROLLER_INTERVAL: ${CONTROLLER_INTERVAL:-15s}
+      VERIFY_AFTER: ${VERIFY_AFTER:-30s}
+      RISK_THRESHOLD: ${RISK_THRESHOLD:-0.60}
+      DB_CONN_THRESHOLD: ${DB_CONN_THRESHOLD:-0.70}
+      COOLDOWN: ${COOLDOWN:-60s}
+      ACTION_BUDGET: ${ACTION_BUDGET:-3}
+      BASELINE_MODE: ${BASELINE_MODE:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      safety-shield:
+        condition: service_started
+      ml-service:
+        condition: service_started
+      gateway:
+        condition: service_started
 
   genai:
     build: ./ai/service

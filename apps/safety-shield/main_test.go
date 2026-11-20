@@ -138,6 +138,17 @@ func TestEvaluate(t *testing.T) {
 			wantAllow: true,
 		},
 		{
+			name: "NO_ACTION exempt from cooldown and budget",
+			mutate: func(r *evaluateRequest) {
+				r.Action = "NO_ACTION"
+				r.State.ActionsInWindow = 99
+				r.State.BudgetRemainingUSD = fptr(0)
+				ts, _ := time.Parse(time.RFC3339, r.State.Now)
+				r.State.LastActionAt = ts.Add(-1 * time.Second).Format(time.RFC3339)
+			},
+			wantAllow: true,
+		},
+		{
 			name: "allow SCALE_DOWN",
 			mutate: func(r *evaluateRequest) {
 				r.Action = "SCALE_DOWN"

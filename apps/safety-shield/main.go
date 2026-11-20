@@ -148,6 +148,10 @@ func checkDBConnCeiling(req evaluateRequest, s state) (bool, string) {
 }
 
 func checkCooldown(req evaluateRequest, s state) (bool, string) {
+	// NO_ACTION is not an intervention; it must never be vetoed by cooldown/budget.
+	if req.Action == "NO_ACTION" {
+		return false, ""
+	}
 	if s.ActionsInWindow >= s.ActionBudgetPerWindow {
 		return true, fmt.Sprintf("action budget reached (%d/%d) in this window", s.ActionsInWindow, s.ActionBudgetPerWindow)
 	}
@@ -170,6 +174,9 @@ func checkCooldown(req evaluateRequest, s state) (bool, string) {
 }
 
 func checkBudget(req evaluateRequest, s state) (bool, string) {
+	if req.Action == "NO_ACTION" {
+		return false, ""
+	}
 	if s.BudgetRemainingUSD != nil && *s.BudgetRemainingUSD <= 0 {
 		return true, fmt.Sprintf("budget exhausted (remaining %.4f USD)", *s.BudgetRemainingUSD)
 	}

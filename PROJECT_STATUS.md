@@ -140,6 +140,34 @@ page → GenAI Job 2 → region failover. Never cut: saga compensation, chaos la
 
 # PART B — WHERE THE PROJECT ACTUALLY IS (fact-checked)
 
+## B0. Latest update — safety-constrained autonomy pivot (verified during the final build)
+
+The sections below were written before the pivot recorded in ADR 0012–0014 and are
+**stale wherever they disagree with this section or with `docs/TOMORROW.md`**.
+
+- Thesis is now **safety-constrained autonomy**: a prediction-driven controller proposes
+  remediations; a deterministic safety shield is the sole veto; every decision is ledged.
+  Regions, router and failover claims were removed (ADR 0013).
+- Running now: **13 containers** — the original 10 plus `safety-shield :8087`,
+  `ml-service :9000`, `reliability-controller :8086`.
+- Real Prometheus `/metrics` on every Go service (the `up 1` stub is gone). Payment has
+  a real DB-latency chaos flag using `pg_sleep`, and real `pgxpool` gauges.
+- `ml-service` serves a real XGBoost classifier + two forecasters. Honest holdout:
+  classifier F1 0.960 / ROC-AUC 0.996 vs trivial `db_conn_pct >= 0.55` baseline
+  F1 0.660 / ROC-AUC 0.767. Training data is synthetic (testbed), stated openly.
+- `safety-shield` is pure/stateless: `POST /evaluate`, `GET /invariants`. Invariants
+  O0/O5/O3/O1/O2/O4/O6/O7 in fixed priority order; table-driven + determinism tests pass.
+- `reliability-controller` is a **singleton by design**: scrapes real metrics, calls
+  `/risk`, scores candidates `SCALE_UP → SHED_LOAD → ENABLE_CIRCUIT_BREAKER → NO_ACTION`,
+  asks the shield for each, writes `decisions → actions → verifications`, and executes
+  `SHED_LOAD` against the gateway. Verified live: `SCALE_UP` blocked by `INV-O2`,
+  `SHED_LOAD` executed, load generator then shows real 503s and recovering p95.
+- Ledger tables: `migrations/002_safety_reliability.sql` (auto-runs on a fresh volume;
+  apply manually with `psql` on an existing one).
+- Still not built / not claimed: outbox poller, Kafka consumers, idempotency enforcement,
+  crash-resume, N≥5 experiments, RAG corpus, regions/failover, production readiness.
+  No mock LLM is used in the demo.
+
 ## B1. TL;DR
 
 **The transaction core + one chaos scenario + live AI postmortem + a live dashboard
@@ -235,10 +263,9 @@ and `demo.sh` runs show up in the feed untouched.
 5. **Chaos = 1 of 6 scenarios.** Only risk-outage exists, and its flag is in-memory
    (leaks between runs until reset; vanishes on restart — `demo.sh`/`smoke.sh` now
    reset it up front). Kill/DB-slowdown/consumer-lag/region-fail/traffic-spike: not built.
-6. **No ML, no controller, no router, no regions, no Prometheus/Grafana.**
-   `predictions`, `decisions` tables don't exist. The `/metrics` endpoints return a
-   static `up 1` stub. There is no forecasting, no automated reaction, no failover —
-   all reaction today is the saga's own compensation plus a human clicking buttons.
+6. **RESOLVED by the pivot — see B0.** Real `/metrics`, ML, shield, controller and the
+   decision ledger now exist. Still absent (and not claimed): router, regions, failover,
+   Prometheus UI/Grafana. This numbered item is kept for historical context only.
 7. **RAG is schema without substance.** `knowledge_chunks` table + HNSW index exist;
    `ai/service/seed.py` exists but has never been run successfully (embeddings 402 on
    free-tier keys), so the table is empty and every report's `<docs>` section is `[]`.

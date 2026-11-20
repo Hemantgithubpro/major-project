@@ -103,10 +103,15 @@ uniqueness is enforced by the controller ledger), `INV-O1` (replica bounds), `IN
 ### 1.5 Ledger tables
 
 `reliability_svc.decisions(decision_uid, service, policy_action, shield_action, verdict,
-blocked_by, reason, score, state_snapshot, created_at)`
+blocked_by, reason, score, state_snapshot, prediction, created_at)`
 `reliability_svc.actions(decision_uid, action, status, executed_at, result, error)`
 `reliability_svc.verifications(decision_uid, metrics_before, metrics_after, improved,
 invariants_ok, created_at)`
+`reliability_svc.metrics_snapshots(service, captured_at, features, prediction, raw)`
+`safety_svc.invariants(id, version, family, description, predicate, enforcement, active)`
+
+Defined in `migrations/002_safety_reliability.sql`. It runs automatically on a fresh volume;
+on a running database apply it with the `psql` command in AGENTS.md §4.
 
 ### 1.6 Endpoints
 
@@ -117,11 +122,20 @@ invariants_ok, created_at)`
 | controller | `GET /predictions` | latest risk |
 | controller | `GET /audit` | invariant audit |
 | gateway | `GET /api/decisions` | proxy to controller |
+| gateway | `GET /api/predictions` | proxy to controller |
+| gateway | `GET /api/audit` | proxy to controller |
 | gateway | `POST /api/chaos/db-latency` | toggle payment DB latency |
+| gateway | `POST /api/chaos/risk-outage` | toggle risk failure (existing demo) |
 | gateway | `POST /admin/shed` | internal shed flag (controller only) |
 | shield | `POST /evaluate` | verdict |
 | shield | `GET /invariants` | catalog |
 | ml | `POST /risk`, `POST /forecast` | inference |
+
+Chaos/admin endpoints on the gateway are gated by `ENV=local`. Compose sets this explicitly.
+
+The controller runs as **one replica by design** — no leader election, no failover claim.
+`BASELINE_MODE=true` skips the shield entirely (verdict `BASELINE`) to demonstrate what an
+unconstrained scaler would do; it never executes `SCALE_UP` against real infrastructure.
 
 ---
 
