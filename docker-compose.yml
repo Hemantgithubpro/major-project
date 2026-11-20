@@ -145,6 +145,15 @@ services:
     environment:
       PORT: 8087
 
+  ml-service:
+    build:
+      context: ./ai/ml
+      dockerfile: ./service/Dockerfile
+    ports:
+      - "9000:9000"
+    environment:
+      MODEL_DIR: /app/models
+
   genai:
     build: ./ai/service
     ports:

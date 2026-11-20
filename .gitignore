@@ -9,3 +9,5 @@ __pycache__/
 .venv/
 .DS_Store
 .commandcode/
+ai/ml/models/*.json
+ai/ml/models/*.txt
