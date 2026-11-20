@@ -10,16 +10,17 @@
 
 ## 0. Definition of done
 
-- [ ] `docker compose up` brings up the full stack, all healthy.
-- [ ] Load generator drives real traffic through the gateway.
-- [ ] `/metrics` on gateway and payment shows real request/latency/pool numbers.
-- [ ] Enabling DB latency raises p95 and DB pool usage.
-- [ ] `ml-service /risk` returns a real XGBoost probability that rises under that latency.
-- [ ] Controller proposes `SCALE_UP`; shield blocks it on `INV-O2`; policy falls through to `SHED_LOAD`.
-- [ ] Gateway actually sheds new orders (real 503s); metrics recover.
-- [ ] Ledger shows proposal → verdict → action → verification, live on screen.
-- [ ] GenAI generates a postmortem from the ledger/evidence (live OpenRouter, no mock).
-- [ ] Two clean end-to-end rehearsals.
+- [x] `docker compose up` brings up the full stack, all healthy (13 containers).
+- [x] Load generator drives real traffic through the gateway (`scripts/loadgen.py`).
+- [x] `/metrics` on gateway and payment shows real request/latency/pool numbers.
+- [x] Enabling DB latency raises p95 and DB pool usage (`pg_sleep` holds real connections).
+- [x] `ml-service /risk` returns a real XGBoost probability that rises under that latency.
+- [x] Controller proposes `SCALE_UP`; shield blocks it on `INV-O2`; policy falls through to `SHED_LOAD`.
+- [x] Gateway actually sheds new orders (real 503s); metrics recover.
+- [x] Ledger shows proposal → verdict → action → verification, live on screen.
+- [x] GenAI generates a postmortem from real incident + saga evidence (live OpenRouter, no mock).
+      **Gap:** the decision ledger is not yet in the GenAI evidence bundle.
+- [x] Two clean end-to-end rehearsals (115 s and 105 s).
 
 ---
 
@@ -245,7 +246,7 @@ under normal load, < 0.3.
 **Tasks**
 - Full run: stack up → loadgen → normal → enable DB latency → observe loop → disable → postmortem.
 - Fix integration bugs; tune thresholds so the demo is reliable:
-  `db_conn_threshold=0.70`, risk threshold `0.60`, controller interval `5 s`, cooldown `60 s`.
+  `db_conn_threshold=0.70`, risk threshold `0.60`, controller interval `15 s`, cooldown `60 s`.
 - Write `scripts/demo-final.sh` (or extend `demo.sh`) with the exact demo steps.
 - Capture fallback screenshots of the ledger and the postmortem.
 - Rehearse twice, timed.
@@ -365,3 +366,24 @@ Phase 5 can start once the controller returns real JSON.
 - A product catalog or storefront — the demo UI is an operator console. The catalog is P1
   (`PLAN.md` §7.1), not part of tomorrow.
 - Production readiness or real cloud scaling.
+
+---
+
+## 10. Rehearsal log (verified, not planned)
+
+Automated run: **`make demo-final`** (`scripts/demo-final.sh`). It resets fault flags and
+waits out any cooldown from a previous run — no manual DB edits — then drives the whole loop.
+
+| Run | Duration | Key decision | Real 503s | Postmortem |
+|-----|----------|--------------|-----------|------------|
+| A | 115 s | `11:34:39 SCALE_UP → BLOCKED/INV-O2 → SHED_LOAD`, verified `improved=true` | 1303 / 1600 | live, `cached=false` |
+| B | 105 s | `11:36:39 SCALE_UP → BLOCKED/INV-O2 → SHED_LOAD`, verified `improved=true` | 1125 / 1600 | live, `cached=false` |
+
+Both runs under 6 minutes. Fallback captures: `docs/screenshots/ledger.png`,
+`docs/screenshots/postmortem.png` (real headless-Chrome captures of the live UI/report).
+
+Integration bugs found and fixed during rehearsal:
+- 10 rps did not saturate the 5-connection pool, so the shield legitimately allowed
+  `SCALE_UP`; the demo now uses 20 rps.
+- Simulated `SCALE_UP` was consuming the real intervention cooldown; it no longer does.
+- OpenRouter generation can exceed 10 s; only that call now has a 90 s timeout.

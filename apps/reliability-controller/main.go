@@ -189,6 +189,7 @@ func (c *controller) buildState(ctx context.Context, snap snapshot, predTS strin
 		SELECT max(executed_at), count(*)::int
 		FROM reliability_svc.actions
 		WHERE status = 'EXECUTED' AND action <> 'NO_ACTION'
+		  AND coalesce((result->>'simulated')::boolean, false) = false
 		  AND executed_at > now() - interval '5 minutes'
 	`).Scan(&lastAt, &count); err != nil {
 		return shieldState{}, err

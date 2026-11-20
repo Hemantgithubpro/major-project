@@ -1,4 +1,4 @@
-.PHONY: up down demo logs ps smoke
+.PHONY: up down demo demo-final logs ps smoke
 
 up:
 	docker compose up -d --build
@@ -18,3 +18,6 @@ smoke:
 
 demo:
 	@./scripts/demo.sh
+
+demo-final:
+	@./scripts/demo-final.sh
