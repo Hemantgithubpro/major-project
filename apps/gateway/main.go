@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"mvp/shared/httpx"
+	"mvp/shared/metrics"
 )
 
 func proxy(target string) http.HandlerFunc {
@@ -79,11 +80,11 @@ func main() {
 		httpx.WriteJSON(w, sresp.StatusCode, out)
 	})
 	mux.HandleFunc("GET /api/transactions/recent", func(w http.ResponseWriter, r *http.Request) {
-		proxy(sagaURL + "/sagas/recent")(w, r)
+		proxy(sagaURL+"/sagas/recent")(w, r)
 	})
 	mux.HandleFunc("GET /api/transactions/", func(w http.ResponseWriter, r *http.Request) {
 		tx := r.URL.Path[len("/api/transactions/"):]
-		proxy(sagaURL + "/saga/" + tx)(w, r)
+		proxy(sagaURL+"/saga/"+tx)(w, r)
 	})
 	mux.HandleFunc("POST /api/chaos/risk-outage", func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
@@ -104,6 +105,6 @@ func main() {
 		httpx.WriteJSON(w, 200, map[string]string{"status": "ok"})
 	})
 	port := httpx.Env("PORT", "8080")
-	s := &http.Server{Addr: ":" + port, Handler: httpx.CORS(mux), ReadHeaderTimeout: 5 * time.Second}
+	s := &http.Server{Addr: ":" + port, Handler: metrics.Middleware("gateway", httpx.CORS(mux)), ReadHeaderTimeout: 5 * time.Second}
 	_ = s.ListenAndServe()
 }

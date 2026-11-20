@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"mvp/shared/metrics"
 )
 
 func CorrID(r *http.Request) string {
@@ -48,8 +50,5 @@ func Healthz(mux *http.ServeMux) {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		WriteJSON(w, 200, map[string]string{"status": "ok"})
 	})
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte("# mvp metrics stub\nup 1\n"))
-	})
+	mux.Handle("/metrics", metrics.Handler())
 }

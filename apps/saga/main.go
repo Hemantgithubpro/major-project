@@ -12,6 +12,7 @@ import (
 	"mvp/shared/db"
 	"mvp/shared/httpx"
 	"mvp/shared/kafkax"
+	"mvp/shared/metrics"
 )
 
 func postJSON(url string, body any, corr string) (int, map[string]any) {
@@ -56,6 +57,7 @@ func main() {
 		_, _ = p.Exec(ctx, `INSERT INTO saga_svc.sagas(id, transaction_id, order_id, status, current_step) VALUES ($1,$2,$3,'RUNNING','reserve')`, sagaID, tx, orderID)
 		record := func(name string, ord int, status, errMsg string) {
 			_, _ = p.Exec(ctx, `INSERT INTO saga_svc.saga_steps(saga_id, step_name, step_order, status, finished_at, error) VALUES ($1,$2,$3,$4,now(),$5)`, sagaID, name, ord, status, errMsg)
+			metrics.IncSagaStep(name, status)
 		}
 		emit := func(typ string) {
 			_ = kafkax.Publish(broker, "transaction.events", kafkax.New("saga-orchestrator", typ, tx, orderID, corr, map[string]any{"saga_id": sagaID}))
@@ -153,6 +155,6 @@ func main() {
 		httpx.WriteJSON(w, 200, map[string]any{"transaction_id": tx, "status": status, "order_id": orderID, "steps": steps})
 	})
 	port := httpx.Env("PORT", "8085")
-	s := &http.Server{Addr: ":" + port, Handler: httpx.CORS(mux), ReadHeaderTimeout: 5 * time.Second}
+	s := &http.Server{Addr: ":" + port, Handler: metrics.Middleware("saga-orchestrator", httpx.CORS(mux)), ReadHeaderTimeout: 5 * time.Second}
 	_ = s.ListenAndServe()
 }

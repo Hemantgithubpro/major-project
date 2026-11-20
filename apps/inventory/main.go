@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"mvp/shared/db"
 	"mvp/shared/httpx"
+	"mvp/shared/metrics"
 )
 
 var pool interface {
@@ -49,6 +50,6 @@ func main() {
 		httpx.WriteJSON(w, 200, map[string]string{"status": "released"})
 	})
 	port := httpx.Env("PORT", "8082")
-	s := &http.Server{Addr: ":" + port, Handler: httpx.CORS(mux), ReadHeaderTimeout: 5 * time.Second}
+	s := &http.Server{Addr: ":" + port, Handler: metrics.Middleware("inventory-service", httpx.CORS(mux)), ReadHeaderTimeout: 5 * time.Second}
 	_ = s.ListenAndServe()
 }

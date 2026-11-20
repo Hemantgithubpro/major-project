@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"mvp/shared/db"
 	"mvp/shared/httpx"
+	"mvp/shared/metrics"
 )
 
 var failing atomic.Bool
@@ -30,12 +31,14 @@ func main() {
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		if failing.Load() {
+			metrics.IncRiskCheck("rejected")
 			httpx.Log("risk-service", "REJECTED (chaos) "+body.OrderID, corr)
 			httpx.WriteJSON(w, 500, map[string]string{"error": "risk check failed (chaos)"})
 			return
 		}
 		id := uuid.NewString()
 		_, _ = p.Exec(ctx, `INSERT INTO risk_svc.risk_checks(id, order_id, verdict) VALUES ($1,$2,'approved')`, id, body.OrderID)
+		metrics.IncRiskCheck("approved")
 		httpx.Log("risk-service", "approved "+body.OrderID, corr)
 		httpx.WriteJSON(w, 200, map[string]string{"check_id": id, "verdict": "approved"})
 	})
@@ -48,6 +51,6 @@ func main() {
 		httpx.WriteJSON(w, 200, map[string]bool{"failing": body.Enabled})
 	})
 	port := httpx.Env("PORT", "8084")
-	s := &http.Server{Addr: ":" + port, Handler: httpx.CORS(mux), ReadHeaderTimeout: 5 * time.Second}
+	s := &http.Server{Addr: ":" + port, Handler: metrics.Middleware("risk-service", httpx.CORS(mux)), ReadHeaderTimeout: 5 * time.Second}
 	_ = s.ListenAndServe()
 }
