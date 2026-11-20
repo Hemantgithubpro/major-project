@@ -343,4 +343,6 @@ Phase 5 can start once the controller returns real JSON.
 - Outbox poller, consumers, idempotency enforcement, crash-resume.
 - Regions/router/failover.
 - RAG corpus seeding.
+- A product catalog or storefront — the demo UI is an operator console. The catalog is P1
+  (`PLAN.md` §7.1), not part of tomorrow.
 - Production readiness or real cloud scaling.

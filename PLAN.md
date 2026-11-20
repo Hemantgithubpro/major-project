@@ -451,6 +451,67 @@ Existing tables to finally use: `order_svc.idempotency_keys`, all `*.outbox`,
 `*.processed_events`, `saga_svc.saga_steps`. Existing `ai_svc.incidents` /
 `ai_svc.incident_evidence` gain rows for non-risk chaos scenarios.
 
+### 7.1 Product catalog (P1 — deferred, not part of the viva build)
+
+Today an order is `{customer_ref, amount}`: a free-form number with no products behind it. A
+real catalog makes the testbed look and behave like an actual checkout, and gives the saga a
+multi-line order to carry. Effort is about **half a day**. It is **not** built before the final
+viva and must not be claimed until it exists.
+
+**Schema — `migrations/003_catalog.sql`** (002 is reserved for safety/reliability):
+
+```sql
+CREATE TABLE IF NOT EXISTS order_svc.products(
+  id uuid PRIMARY KEY,
+  sku text UNIQUE NOT NULL,
+  name text NOT NULL,
+  description text,
+  price_cents bigint NOT NULL CHECK (price_cents >= 0),
+  currency text NOT NULL DEFAULT 'INR',
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS order_svc.order_lines(
+  id bigserial PRIMARY KEY,
+  order_id uuid NOT NULL REFERENCES order_svc.orders(id),
+  product_id uuid NOT NULL REFERENCES order_svc.products(id),
+  quantity int NOT NULL CHECK (quantity > 0),
+  unit_price_cents bigint NOT NULL,
+  line_total_cents bigint GENERATED ALWAYS AS (quantity * unit_price_cents) STORED,
+  UNIQUE (order_id, product_id)
+);
+
+ALTER TABLE order_svc.orders ADD COLUMN IF NOT EXISTS total_cents bigint;
+```
+
+**Rules**
+
+- **Server-side pricing.** The client sends `{product_id, quantity}` only. The order service
+  reads `products.price_cents`, computes the total, and writes `order_lines`. A client-supplied
+  price is ignored. This is a correctness rule, not a nicety.
+- **One transaction.** Order row + line rows + total are written atomically. Compute in integer
+  cents, store `orders.total_cents`, and set `total_amount = total_cents / 100.0` in the same
+  statement. Lines must always sum to `total_cents`.
+- **Backward compatible payload.** Keep `{customer_ref, amount}` working so `scripts/demo.sh`
+  and the existing saga flow do not break. Add `{customer_ref, items:[{product_id, quantity}]}`.
+- **No per-SKU stock in this phase.** Inventory still reserves one row per order. Per-SKU stock
+  is a separate change to the inventory schema and the reserve/release contract — explicitly
+  out of scope here.
+- **No cart persistence, no auth, no checkout funnel.** The UI addition is a product grid whose
+  "Buy" button posts a single order.
+- Seed 6–8 products with fixed UUIDs in the migration so demos are reproducible.
+- Endpoints live on the order service (`GET /products`, `GET /products/{id}`); the gateway
+  proxies them as `/api/products`.
+- Tests: total derived from DB prices (a tampered client price changes nothing), order + lines
+  atomic, legacy payload still works.
+
+**Effort:** migration + seed 45 min · order service endpoints + validation 1.5 h · gateway proxy
+and order payload 1 h · frontend product grid 45 min · tests and demo re-run 30 min.
+
+**Exit:** `GET /api/products` returns seeded rows; a two-item order creates two `order_lines`
+with a total equal to their sum; `make demo` still green.
+
 ---
 
 ## 8. API surface
@@ -459,7 +520,11 @@ Existing tables to finally use: `order_svc.idempotency_keys`, all `*.outbox`,
 
 ```
 POST /api/orders                       header Idempotency-Key (enforced)
+                                       body: {customer_ref, amount} or
+                                             {customer_ref, items:[{product_id, quantity}]} (P1)
 GET  /api/orders/:id
+GET  /api/products                     active catalog (P1)
+GET  /api/products/:id                 single product (P1)
 GET  /api/transactions                 paginated
 GET  /api/transactions/:id             saga timeline
 POST /api/transactions/:id/retry
@@ -608,6 +673,9 @@ New topics: `reliability.events`, `safety.events`, `dead-letter.events`.
 - Exit: report for the DB-bottleneck incident cites shield decisions and real rows.
 
 ### P1 — strengthens results
+- **Real product catalog (≈ half a day).** `order_svc.products` + `order_svc.order_lines`,
+  `GET /api/products`, server-side pricing, and a product grid in the UI. Full scope in §7.1.
+  Build only after the shield/controller loop is green; do not claim it before it exists.
 - Remaining chaos scenarios and experiment breadth.
 - RAG corpus seeding (docs + past reports) and root-cause Q&A.
 - More experiment scenarios; charts.
