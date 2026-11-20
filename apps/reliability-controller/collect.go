@@ -47,12 +47,13 @@ type collector struct {
 	urls     map[string]string
 	interval time.Duration
 
-	mu           sync.Mutex
-	prev         map[string]float64
-	primed       bool
-	lastScrapeAt time.Time
-	p95          float64
-	hist         []p95Point
+	mu            sync.Mutex
+	prev          map[string]float64
+	primed        bool
+	lastScrapeAt  time.Time
+	lastTrafficAt time.Time
+	p95           float64
+	hist          []p95Point
 }
 
 func newCollector(urls map[string]string, interval time.Duration) *collector {
@@ -247,9 +248,12 @@ func (c *collector) collect() (snapshot, error) {
 		errors += math.Max(0, s.value-prev[keyOf(s)])
 	}
 
+	if ordersTotal > 0 {
+		c.lastTrafficAt = now
+	}
 	p95 := histogramP95(all, prev, "http_request_duration_seconds", map[string]string{"service": "gateway", "route": "/api/orders"}, delta)
-	if p95 == 0 && c.p95 > 0 {
-		p95 = c.p95 // no traffic in this window; carry the last known value
+	if p95 == 0 && c.p95 > 0 && now.Sub(c.lastTrafficAt) <= 30*time.Second {
+		p95 = c.p95 // no traffic in this window; carry briefly, then expire
 	} else {
 		c.p95 = p95
 	}

@@ -1,70 +1,155 @@
 <!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><title>MVP Reliability</title>
-<style>body{font-family:system-ui;max-width:900px;margin:20px auto;padding:0 16px}button{padding:8px 14px;margin:4px}pre{background:#f4f4f4;padding:12px;white-space:pre-wrap}.card{border:1px solid #ddd;padding:12px;margin:12px 0}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px 8px;text-align:left;font-size:13px}.ok{color:#0a7d2c;font-weight:bold}.bad{color:#b00020;font-weight:bold}tr{cursor:pointer}tr:hover{background:#f9f9f9}</style>
+<head><meta charset="utf-8"><title>MVP Reliability — Safety-Constrained Autonomy</title>
+<style>
+body{font-family:system-ui;max-width:1100px;margin:20px auto;padding:0 16px}
+button{padding:8px 14px;margin:4px}
+pre{background:#f4f4f4;padding:12px;white-space:pre-wrap}
+.card{border:1px solid #ddd;padding:12px;margin:12px 0}
+table{border-collapse:collapse;width:100%}
+td,th{border:1px solid #ddd;padding:6px 8px;text-align:left;font-size:13px}
+.ok{color:#0a7d2c;font-weight:bold}
+.bad{color:#b00020;font-weight:bold}
+.warn{color:#a15c00;font-weight:bold}
+.muted{color:#666}
+tr{cursor:pointer}
+tr:hover{background:#f9f9f9}
+.badge{display:inline-block;padding:2px 6px;border-radius:4px;background:#eee;font-size:12px}
+</style>
 </head>
 <body>
-<h1>MVP Reliability — 30% slice</h1>
+<h1>Safety-constrained autonomy testbed</h1>
+<p class="muted">Real metrics → XGBoost risk → safety shield → action → ledger → GenAI postmortem</p>
+
 <div class="card">
 <h3>Live transactions <small>(auto-refresh 3s)</small></h3>
 <table><thead><tr><th>Time</th><th>Order</th><th>Tx</th><th>Status</th></tr></thead><tbody id="feed"></tbody></table>
 <pre id="detail">click a row for saga timeline…</pre>
 </div>
+
+<div class="card">
+<h3>Decision ledger <small>(auto-refresh 2s)</small></h3>
+<table><thead><tr>
+  <th>Time</th><th>Service</th><th>Proposed</th><th>Verdict</th><th>Blocked by</th>
+  <th>Final action</th><th>Risk</th><th>Verify</th><th>Reason</th>
+</tr></thead><tbody id="decisions"></tbody></table>
+<pre id="decisionDetail">click a row for the full decision + state snapshot…</pre>
+</div>
+
+<div class="card">
+<h3>Risk signal <small>(latest prediction)</small></h3>
+<pre id="prediction">waiting for first decision…</pre>
+</div>
+
 <div class="card">
 <h3>Place order</h3>
 <button onclick="placeOrder(false)">Place order (happy)</button>
 <button onclick="placeOrder(true)">Place order (risk fails)</button>
 <pre id="order"></pre>
 </div>
+
 <div class="card">
-<h3>Chaos</h3>
+<h3>Chaos + recovery</h3>
+<button onclick="dbLatency(true)">Enable DB latency (300ms)</button>
+<button onclick="dbLatency(false)">Disable DB latency</button>
+<button onclick="shed(false)">Reset load shed</button>
 <button onclick="chaos(true)">Enable risk outage</button>
 <button onclick="chaos(false)">Disable risk outage</button>
 <pre id="chaos"></pre>
 </div>
+
 <div class="card">
 <h3>Report</h3>
 <input id="iid" placeholder="incident_id" size="40">
 <button onclick="report()">Generate postmortem (OpenRouter)</button>
 <pre id="report"></pre>
 </div>
+
 <script>
 const G = "http://localhost:8080", AI = "http://localhost:9001";
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function post(url, body) { return fetch(url, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); }
 async function refresh() {
   try {
     const r = await fetch(G+"/api/transactions/recent");
     const rows = await r.json();
     document.getElementById("feed").innerHTML = rows.map(t =>
-      `<tr onclick="detail('${t.transaction_id}')"><td>${(t.created_at||"").slice(11,19)}</td><td>${(t.order_id||"").slice(0,8)}</td><td>${(t.transaction_id||"").slice(0,8)}</td><td class="${t.status==="COMPLETED"?"ok":"bad"}">${t.status}</td></tr>`
+      `<tr onclick="detail('${esc(t.transaction_id)}')"><td>${esc((t.created_at||"").slice(11,19))}</td><td>${esc((t.order_id||"").slice(0,8))}</td><td>${esc((t.transaction_id||"").slice(0,8))}</td><td class="${t.status==="COMPLETED"?"ok":"bad"}">${esc(t.status)}</td></tr>`
     ).join("") || "<tr><td colspan=4>no transactions yet — run demo.sh or place an order</td></tr>";
   } catch(e) { /* backend waking up */ }
 }
+async function refreshDecisions() {
+  try {
+    const r = await fetch(G+"/api/decisions");
+    const rows = await r.json();
+    document.getElementById("decisions").innerHTML = rows.slice(0,25).map(d => {
+      const vclass = d.verdict === "ALLOWED" ? "ok" : d.verdict === "BASELINE" ? "warn" : "bad";
+      const v = d.verifications && d.verifications[d.verifications.length-1];
+      const verify = v ? (v.improved ? "improved" : "no change") + (v.invariants_ok ? " · invariants OK" : " · invariant check failed") : "pending…";
+      return `<tr onclick="decisionDetail('${esc(d.decision_uid)}')">
+        <td>${esc((d.created_at||"").slice(11,19))}</td>
+        <td>${esc(d.service)}</td>
+        <td>${esc(d.policy_action)}</td>
+        <td class="${vclass}">${esc(d.verdict)}</td>
+        <td>${esc(d.blocked_by || "—")}</td>
+        <td>${esc(d.shield_action)}</td>
+        <td>${Number(d.score||0).toFixed(3)}</td>
+        <td>${esc(verify)}</td>
+        <td>${esc(d.reason)}</td></tr>`;
+    }).join("") || "<tr><td colspan=9>no decisions yet — trigger a cycle or run the demo</td></tr>";
+  } catch(e) { /* controller waking up */ }
+  try {
+    const r = await fetch(G+"/api/predictions");
+    const p = await r.json();
+    const f = p.features || {};
+    document.getElementById("prediction").textContent =
+      "failure probability : " + Number(p.failure_probability||0).toFixed(4) + "\n" +
+      "risk level          : " + ((p.prediction||{}).risk_level || "—") + "\n" +
+      "predicted cause     : " + ((p.prediction||{}).predicted_cause || "—") + "\n" +
+      "p95 / conn / waiting: " + (f.p95_latency_ms||0).toFixed(0) + "ms / " + Number(f.db_conn_pct||0).toFixed(2) + " / " + (f.db_pool_waiting||0) + "\n" +
+      "injected DB latency : " + (f.db_latency_injected_ms||0) + "ms";
+  } catch(e) { /* no prediction yet */ }
+}
 async function detail(tx) {
   const r = await fetch(G+"/api/transactions/"+tx);
-  const j = await r.json();
-  document.getElementById("detail").textContent = JSON.stringify(j,null,2);
+  document.getElementById("detail").textContent = JSON.stringify(await r.json(),null,2);
+}
+async function decisionDetail(uid) {
+  const r = await fetch(G+"/api/decisions");
+  const rows = await r.json();
+  const d = rows.find(x => x.decision_uid === uid);
+  document.getElementById("decisionDetail").textContent = d ? JSON.stringify(d,null,2) : "not found";
 }
 async function placeOrder(fail) {
-  if (fail) await fetch(G+"/api/chaos/risk-outage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:true})});
-  const r = await fetch(G+"/api/orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({customer_ref:"demo",amount:99.5})});
+  if (fail) await post(G+"/api/chaos/risk-outage",{enabled:true});
+  const r = await post(G+"/api/orders",{customer_ref:"demo",amount:99.5});
   const j = await r.json();
   document.getElementById("order").textContent = JSON.stringify(j,null,2);
   if (j.incident_id) document.getElementById("iid").value = j.incident_id;
-  if (fail) await fetch(G+"/api/chaos/risk-outage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:false})});
+  if (fail) await post(G+"/api/chaos/risk-outage",{enabled:false});
   refresh();
 }
+async function dbLatency(on) {
+  const r = await post(G+"/api/chaos/db-latency",{enabled:on,added_ms:300});
+  document.getElementById("chaos").textContent = "DB latency: " + await r.text();
+}
+async function shed(on) {
+  const r = await post(G+"/admin/shed",{enabled:on});
+  document.getElementById("chaos").textContent = "Load shed: " + await r.text();
+}
 async function chaos(on) {
-  const r = await fetch(G+"/api/chaos/risk-outage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:on})});
-  document.getElementById("chaos").textContent = await r.text();
+  const r = await post(G+"/api/chaos/risk-outage",{enabled:on});
+  document.getElementById("chaos").textContent = "Risk outage: " + await r.text();
 }
 async function report() {
   document.getElementById("report").textContent = "generating…";
   const iid = document.getElementById("iid").value;
-  const r = await fetch(AI+"/generate-postmortem",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({incident_id:iid})});
+  const r = await post(AI+"/generate-postmortem",{incident_id:iid});
   const j = await r.json();
   document.getElementById("report").textContent = (j.model ? "["+j.model+(j.cached?" cached":"")+"]\n\n" : "") + (j.markdown || JSON.stringify(j));
 }
-refresh(); setInterval(refresh, 3000);
+refresh(); refreshDecisions();
+setInterval(refresh, 3000); setInterval(refreshDecisions, 2000);
 </script>
 </body>
 </html>
